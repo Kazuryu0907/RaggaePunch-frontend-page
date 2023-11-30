@@ -1,0 +1,26 @@
+query GetPosts {
+    posts {
+        ...postFragment
+    }
+}
+
+
+mutation updateCheck($id: Int!) {
+    updateCheck(id: $id) {
+        ...postFragment
+    }
+}
+
+subscription postAdded{
+    postAdded {
+        ...postFragment
+    }
+}
+
+fragment postFragment on PostModel {
+    id
+    name
+    time
+    checked
+}
+

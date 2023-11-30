@@ -1,14 +1,65 @@
-import Image from 'next/image'
-import { Inter } from 'next/font/google'
+import Image from "next/image";
+import { Inter } from "next/font/google";
+import { GetServerSideProps, NextPage } from "next";
+import { urqlClient } from "@/libs/gql-requests";
+import { gql, subscriptionExchange, useSubscription } from "urql";
+import client from "@/libs/graphqlClient";
+import {
+  GetPostsDocument,
+  UpdateCheckDocument,
+  useGetPostsQuery,
+  usePostAddedSubscription,
+  useUpdateCheckMutation,
+  PostAddedDocument,
+  PostFragmentFragment,
+  PostFragmentFragmentDoc,
+} from "@/gql/graphql";
+import { useCallback, useMemo } from "react";
+import { withUrqlClient } from "next-urql";
+import {filter} from "graphql-anywhere";
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] });
 
-export default function Home() {
+type Props = {
+  posts: {
+    id: string;
+    name: string;
+    time: string;
+    checked: boolean;
+  }[];
+};
+
+const handleSubscription = (messages: any[] = [], response: any) => {
+  return [response.postAdded, ...messages];
+};
+const Home: NextPage = () => {
+  //から行列が返ってきた時にcacheが更新されないので，contextを指定している
+  const context = useMemo(() => ({ additionalTypenames: ["PostModel"] }), []);
+  const [checkState, executeCheckState] = useUpdateCheckMutation();
+  const [queryRes] = useGetPostsQuery({ context: context });
+  const { data } = queryRes;
+  const submit = () => {
+    executeCheckState({ id: 1 });
+  };
   return (
     <main
       className={`flex min-h-screen flex-col items-center justify-between p-24 ${inter.className}`}
     >
+      <button onClick={submit} disabled={checkState.fetching}>
+        Button Here
+      </button>
       <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
+        <ul>
+          {data?.posts &&
+            data.posts.map((_post) => {
+              const post = filter<PostFragmentFragment>(PostFragmentFragmentDoc,_post);
+              return(
+              <li key={post.id}>
+                id {post.id} name {post.name} time: {post.time} checked:
+                {post.checked ? "true" : "false"}
+              </li>
+            )})}
+        </ul>
         <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
           Get started by editing&nbsp;
           <code className="font-mono font-bold">src/pages/index.tsx</code>
@@ -20,7 +71,7 @@ export default function Home() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            By{' '}
+            By{" "}
             <Image
               src="/vercel.svg"
               alt="Vercel Logo"
@@ -52,7 +103,7 @@ export default function Home() {
           rel="noopener noreferrer"
         >
           <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
+            Docs{" "}
             <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
               -&gt;
             </span>
@@ -69,7 +120,7 @@ export default function Home() {
           rel="noopener noreferrer"
         >
           <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
+            Learn{" "}
             <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
               -&gt;
             </span>
@@ -86,7 +137,7 @@ export default function Home() {
           rel="noopener noreferrer"
         >
           <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
+            Templates{" "}
             <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
               -&gt;
             </span>
@@ -103,7 +154,7 @@ export default function Home() {
           rel="noopener noreferrer"
         >
           <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
+            Deploy{" "}
             <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
               -&gt;
             </span>
@@ -114,5 +165,35 @@ export default function Home() {
         </a>
       </div>
     </main>
-  )
-}
+  );
+};
+
+import { cacheExchange, fetchExchange, ssrExchange } from "urql";
+import { createClient as createWSClient } from "graphql-ws";
+import { devtoolsExchange } from "@urql/devtools";
+import { useFragment } from "@/gql";
+// export default Home;
+const wsClient = createWSClient({
+  url: "ws://localhost:3000/graphql",
+});
+export default withUrqlClient((_ssrExchange, ctx) => ({
+  url: "http://localhost:3000/graphql",
+  fetchSubscriptions: true,
+  exchanges: [
+    devtoolsExchange,
+    cacheExchange,
+    _ssrExchange,
+    fetchExchange,
+    subscriptionExchange({
+      forwardSubscription(request) {
+        const input = { ...request, query: request.query || "" };
+        return {
+          subscribe(subscriber) {
+            const unsubscribe = wsClient.subscribe(input, subscriber);
+            return { unsubscribe };
+          },
+        };
+      },
+    }),
+  ],
+}))(Home);
